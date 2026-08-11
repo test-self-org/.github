@@ -20,7 +20,7 @@ jobs:
 
       - name: Get lowercase repository name
         id: name
-        run: echo "REPOSITORY=$(${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+        run: echo "REPOSITORY=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         with:
