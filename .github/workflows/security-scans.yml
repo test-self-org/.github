@@ -32,10 +32,10 @@ jobs:
 
       # ---------- Build ----------
       - name: Build backend docker image
-        run: docker build --no-cache -t docker.io/$REPOSITORY-backend:${{ github.sha }} ./backend
+        run: docker build --no-cache -t docker.io/${{ env.REPOSITORY }}-backend:${{ github.sha }} ./backend
 
       - name: Build frontend docker image
-        run: docker build --no-cache -t docker.io/$REPOSITORY-frontend:${{ github.sha }} ./frontend
+        run: docker build --no-cache -t docker.io/${{ env.REPOSITORY }}-frontend:${{ github.sha }} ./frontend
 
       # ---------- Trivy ----------
       - name: Run Trivy vulnerability scanner for docker frontend
@@ -43,7 +43,7 @@ jobs:
         continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: 'docker.io/$REPOSITORY-frontend:${{ github.sha }}'
+          image-ref: 'docker.io/${{ env.REPOSITORY }}-frontend:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
           scan-ref: '.'
           exit-code: '1'
@@ -56,7 +56,7 @@ jobs:
         continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: 'docker.io/$REPOSITORY-backend:${{ github.sha }}'
+          image-ref: 'docker.io/${{ env.REPOSITORY }}-backend:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
           scan-ref: '.'
           exit-code: '1'
