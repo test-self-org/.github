@@ -2,6 +2,13 @@ name: Security Scans
 
 on:
   workflow_call:
+    inputs:
+      frontend-folder:
+        required: true
+        type: string
+      backend-folder:
+        required: true
+        type: string
     secrets:
       SONAR_TOKEN:
         required: true
@@ -32,10 +39,10 @@ jobs:
 
       # ---------- Build ----------
       - name: Build backend docker image
-        run: docker build --no-cache -t docker.io/${{ steps.name.outputs.REPOSITORY }}-backend:${{ github.sha }} ./backend
+        run: docker build --no-cache -t docker.io/${{ steps.name.outputs.REPOSITORY }}-backend:${{ github.sha }} ${{ inputs.backend-folder }}
 
       - name: Build frontend docker image
-        run: docker build --no-cache -t docker.io/${{ steps.name.outputs.REPOSITORY }}-frontend:${{ github.sha }} ./frontend
+        run: docker build --no-cache -t docker.io/${{ steps.name.outputs.REPOSITORY }}-frontend:${{ github.sha }} ${{ inputs.frontend-folder }}
 
       # ---------- Trivy ----------
       - name: Run Trivy vulnerability scanner for docker frontend
