@@ -3,6 +3,9 @@ name: Security Scans
 on:
   workflow_call:
     inputs:
+      name:
+        required: true
+        type: string
       folder:
         required: true
         type: string
@@ -36,7 +39,7 @@ jobs:
 
       # ---------- Build ----------
       - name: Build backend docker image
-        run: docker build --no-cache -t docker.io/${{ steps.name.outputs.REPOSITORY }}-${{ inputs.folder }}:${{ github.sha }} ${{ inputs.folder }}
+        run: docker build --no-cache -t docker.io/${{ steps.name.outputs.REPOSITORY }}-${{ inputs.name }}:${{ github.sha }} ${{ inputs.folder }}
 
 
       # ---------- Trivy ----------
@@ -45,13 +48,13 @@ jobs:
         continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: 'docker.io/${{ steps.name.outputs.REPOSITORY }}-${{ inputs.folder }}:${{ github.sha }}'
+          image-ref: 'docker.io/${{ steps.name.outputs.REPOSITORY }}-${{ inputs.name }}:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
           scan-ref: '.'
           exit-code: '1'
           ignore-unfixed: true
           format: 'table'
-          output: 'SUBMISSION/reports/${{ steps.date.outputs.date }}/${{ inputs.folder }}.trivy'
+          output: 'SUBMISSION/reports/${{ steps.date.outputs.date }}/${{ inputs.name }}.trivy'
 
       # ---------- SonarQube ----------
       - name: Sonarqube Scan
