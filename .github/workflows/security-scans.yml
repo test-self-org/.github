@@ -3,10 +3,7 @@ name: Security Scans
 on:
   workflow_call:
     inputs:
-      frontend-folder:
-        required: true
-        type: string
-      backend-folder:
+      folder:
         required: true
         type: string
     secrets:
@@ -39,37 +36,22 @@ jobs:
 
       # ---------- Build ----------
       - name: Build backend docker image
-        run: docker build --no-cache -t docker.io/${{ steps.name.outputs.REPOSITORY }}-backend:${{ github.sha }} ${{ inputs.backend-folder }}
+        run: docker build --no-cache -t docker.io/${{ steps.name.outputs.REPOSITORY }}-${{ inputs.folder }}:${{ github.sha }} ${{ inputs.folder }}
 
-      - name: Build frontend docker image
-        run: docker build --no-cache -t docker.io/${{ steps.name.outputs.REPOSITORY }}-frontend:${{ github.sha }} ${{ inputs.frontend-folder }}
 
       # ---------- Trivy ----------
-      - name: Run Trivy vulnerability scanner for docker frontend
-        id: trivy-frontend
+      - name: Run Trivy vulnerability scanner for docker
+        id: trivy
         continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: 'docker.io/${{ steps.name.outputs.REPOSITORY }}-frontend:${{ github.sha }}'
+          image-ref: 'docker.io/${{ steps.name.outputs.REPOSITORY }}-${{ inputs.folder }}:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
           scan-ref: '.'
           exit-code: '1'
           ignore-unfixed: true
           format: 'table'
-          output: 'SUBMISSION/reports/${{ steps.date.outputs.date }}/frontend.trivy'
-
-      - name: Run Trivy vulnerability scanner for docker backend
-        id: trivy-backend
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: 'docker.io/${{ steps.name.outputs.REPOSITORY }}-backend:${{ github.sha }}'
-          severity: 'CRITICAL,HIGH'
-          scan-ref: '.'
-          exit-code: '1'
-          ignore-unfixed: true
-          format: 'table'
-          output: 'SUBMISSION/reports/${{ steps.date.outputs.date }}/backend.trivy'
+          output: 'SUBMISSION/reports/${{ steps.date.outputs.date }}/${{ inputs.folder }}.trivy'
 
       # ---------- SonarQube ----------
       - name: Sonarqube Scan
