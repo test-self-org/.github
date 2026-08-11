@@ -1,0 +1,133 @@
+name: Security Scans
+
+on:
+  workflow_call:
+    secrets:
+      SONAR_TOKEN:
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    name: Build, Scan, and Report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Create reports directory
+        run: mkdir -p SUBMISSION/reports/${{ steps.date.outputs.date }}
+
+      # ---------- Build ----------
+      - name: Build backend docker image
+        run: docker build --no-cache -t docker.io/${{ github.repository }}-backend:${{ github.sha }} ./backend
+
+      - name: Build frontend docker image
+        run: docker build --no-cache -t docker.io/${{ github.repository }}-frontend:${{ github.sha }} ./frontend
+
+      # ---------- Trivy ----------
+      - name: Run Trivy vulnerability scanner for docker frontend
+        id: trivy-frontend
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: 'docker.io/${{ github.repository }}-frontend:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          scan-ref: '.'
+          exit-code: '1'
+          ignore-unfixed: true
+          format: 'table'
+          output: 'SUBMISSION/reports/${{ steps.date.outputs.date }}/frontend.trivy'
+
+      - name: Run Trivy vulnerability scanner for docker backend
+        id: trivy-backend
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: 'docker.io/${{ github.repository }}-backend:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          scan-ref: '.'
+          exit-code: '1'
+          ignore-unfixed: true
+          format: 'table'
+          output: 'SUBMISSION/reports/${{ steps.date.outputs.date }}/backend.trivy'
+
+      # ---------- SonarQube ----------
+      - name: Sonarqube Scan
+        id: sonar-scan
+        continue-on-error: true
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+
+      - name: Ensure jq is installed
+        if: always()
+        run: jq --version || (sudo apt-get update && sudo apt-get install -y jq)
+
+      - name: Fetch analysis results from SonarQube API
+        if: always()
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          [ -f .scannerwork/report-task.txt ] || exit 0
+
+          TASK_ID=$(grep -oP '(?<=ceTaskId=).*' .scannerwork/report-task.txt)
+          PROJECT_KEY=$(grep -oP '(?<=projectKey=).*' .scannerwork/report-task.txt)
+          DIR="SUBMISSION/reports/${{ steps.date.outputs.date }}"
+
+          # On a pull request the analysis is stored under the PR key, not the branch.
+          SCOPE=""
+          [ -n "$PR_NUMBER" ] && SCOPE="&pullRequest=${PR_NUMBER}"
+
+          for i in {1..30}; do
+            STATUS=$(curl -s -u "${SONAR_TOKEN}:" "${SONAR_HOST_URL}/api/ce/task?id=${TASK_ID}" | jq -r .task.status)
+            [ "$STATUS" = "SUCCESS" ] && break
+            sleep 5
+          done
+          [ "$STATUS" = "SUCCESS" ] || { echo "Analysis did not complete (status: $STATUS)"; exit 0; }
+
+          curl -s -u "${SONAR_TOKEN}:" "${SONAR_HOST_URL}/api/issues/search?componentKeys=${PROJECT_KEY}&ps=500${SCOPE}" | jq . > "$DIR/sonarqube-issues.json"
+          curl -s -u "${SONAR_TOKEN}:" "${SONAR_HOST_URL}/api/hotspots/search?projectKey=${PROJECT_KEY}&ps=500${SCOPE}" | jq . > "$DIR/sonarqube-hotspots.json"
+      
+      # ---------- Reports ----------
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports-${{ steps.date.outputs.date }}
+          path: SUBMISSION/reports/${{ steps.date.outputs.date }}
+          if-no-files-found: warn
+
+      # Pull requests only get the artifact above: the checkout is a detached
+      # merge ref, and fork PRs run with a read-only token.
+      - name: Commit reports
+        id: commit
+        if: always() && github.event_name == 'push'
+        run: |
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add -A SUBMISSION/reports/
+          if git diff --staged --quiet; then
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Add Trivy and SonarQube reports for ${{ steps.date.outputs.date }} [skip ci]"
+            echo "committed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push changes
+        if: steps.commit.outputs.committed == 'true'
+        uses: ad-m/github-push-action@v0.8.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref_name }}
